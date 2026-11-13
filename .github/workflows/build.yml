@@ -1,0 +1,37 @@
+name: Build Nektar (macOS, Apple Silicon)
+
+# Runs only when you press "Run workflow" - saves free macOS minutes.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon (M1)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache JUCE download
+        uses: actions/cache@v4
+        with:
+          path: build/_deps/juce-src
+          key: juce-8.0.6-${{ runner.os }}
+
+      - name: Configure
+        run: cmake -B build -G Xcode -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        run: |
+          mkdir -p out
+          cp -R build/Nektar_artefacts/Release/VST3/Nektar.vst3 out/
+          cp -R build/Nektar_artefacts/Release/Standalone/Nektar.app out/
+          codesign --force --deep --sign - out/Nektar.vst3
+          codesign --force --deep --sign - out/Nektar.app
+          cd out && zip -qry ../Nektar-macOS-arm64.zip .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Nektar-macOS-arm64
+          path: Nektar-macOS-arm64.zip
