@@ -31,28 +31,6 @@ void shadowRect (Graphics& g, juce::Rectangle<float> r, float corner, float alph
     juce::DropShadow (juce::Colours::black.withAlpha (alpha), radius, off).drawForPath (g, p);
 }
 
-// Flat "liquid" knob: the circle fills from the bottom.
-void knob (Graphics& g, const juce::Typeface::Ptr& tf, float cx, float cy, float r, float p,
-           const juce::String& label, bool dim = false, float fs = 12.0f)
-{
-    const float a = dim ? 0.35f : 1.0f;
-    g.setColour (Colour (0xff1e1d1b));
-    g.fillEllipse (cx - r, cy - r, 2 * r, 2 * r);
-    {
-        juce::Graphics::ScopedSaveState s (g);
-        juce::Path c;
-        c.addEllipse (cx - r, cy - r, 2 * r, 2 * r);
-        g.reduceClipRegion (c);
-        g.setColour (kAcc.withMultipliedAlpha (a));
-        g.fillRect (cx - r, cy + r - 2 * r * p, 2 * r, 2 * r * p);
-    }
-    g.setColour (kAcc.withMultipliedAlpha (a));
-    g.drawEllipse (cx - r, cy - r, 2 * r, 2 * r, 1.5f);
-    g.setColour (kMuted.withMultipliedAlpha (dim ? 0.5f : 1.0f));
-    g.setFont (font (tf, fs));
-    g.drawText (label, juce::Rectangle<float> (cx - 45, cy + r + 3, 90, fs + 4), juce::Justification::centred);
-}
-
 void wave (Graphics& g, float cx, float cy, float w, float amp, int seed, float decay, int n = 40)
 {
     juce::Random rnd (seed);
@@ -61,6 +39,18 @@ void wave (Graphics& g, float cx, float cy, float w, float amp, int seed, float 
     {
         const float x = cx - w / 2 + w * (float) i / (float) (n - 1);
         const float h = juce::jmax (1.5f, amp * std::exp (-decay * (float) i / (float) n) * (0.35f + 0.65f * rnd.nextFloat()));
+        g.drawLine (x, cy - h, x, cy + h, 2.0f);
+    }
+}
+
+void realWave (Graphics& g, float cx, float cy, float w, float amp, const juce::Array<float>& peaks)
+{
+    const int n = peaks.size();
+    g.setColour (kLight);
+    for (int i = 0; i < n; ++i)
+    {
+        const float x = cx - w / 2 + w * (float) i / (float) juce::jmax (1, n - 1);
+        const float h = juce::jmax (1.5f, amp * peaks[i]);
         g.drawLine (x, cy - h, x, cy + h, 2.0f);
     }
 }
@@ -83,9 +73,10 @@ void sphere (Graphics& g, float x, float y, float s, Colour c)
     g.fillEllipse (x - s, y - s, 2 * s, 2 * s);
 }
 
+// Slot disc without the knobs (the knobs are live components on top).
 void slotDisc (Graphics& g, const juce::Typeface::Ptr& reg, const juce::Typeface::Ptr& bold,
                float cx, float cy, int index, const juce::String& title, bool empty,
-               const float* p, int seed)
+               const juce::String& emptyText, const juce::Array<float>* peaks, int seed)
 {
     shadowCircle (g, cx, cy, kSlotR, 0.5f, 30, { 14, 22 });
     g.setGradientFill (ColourGradient (Colour (0xff3d3b39), cx - kSlotR * 0.6f, cy - kSlotR * 0.7f,
@@ -94,7 +85,6 @@ void slotDisc (Graphics& g, const juce::Typeface::Ptr& reg, const juce::Typeface
     g.setColour (juce::Colours::white.withAlpha (0.07f));
     g.drawEllipse (cx - kSlotR + 0.75f, cy - kSlotR + 0.75f, 2 * kSlotR - 1.5f, 2 * kSlotR - 1.5f, 1.5f);
 
-    // title
     g.setColour (kLight);
     g.drawEllipse (cx - 62 - 11, cy - 88 - 11, 22, 22, 1.2f);
     g.setFont (font (bold, 13));
@@ -103,9 +93,9 @@ void slotDisc (Graphics& g, const juce::Typeface::Ptr& reg, const juce::Typeface
     g.drawText (title, juce::Rectangle<float> (cx - 44, cy - 99, 120, 22), juce::Justification::centredLeft);
 
     const juce::Rectangle<float> box (cx - 80, cy - 68, 160, 46);
+    insetBox (g, box, 8);
     if (empty)
     {
-        insetBox (g, box, 8);
         const float dash[] = { 4.0f, 4.0f };
         juce::Path outline;
         outline.addRoundedRectangle (box.reduced (1), 8.0f);
@@ -118,35 +108,181 @@ void slotDisc (Graphics& g, const juce::Typeface::Ptr& reg, const juce::Typeface
         g.drawLine (box.getX() + 28, box.getCentreY() - 5, box.getX() + 28, box.getCentreY() + 5, 1.5f);
         g.drawLine (box.getX() + 23, box.getCentreY(), box.getX() + 33, box.getCentreY(), 1.5f);
         g.setFont (font (reg, 13));
-        g.drawText ("from map", juce::Rectangle<float> (box.getX() + 44, box.getCentreY() - 9, 90, 18), juce::Justification::centredLeft);
+        g.drawText (emptyText, juce::Rectangle<float> (box.getX() + 44, box.getCentreY() - 9, 90, 18), juce::Justification::centredLeft);
     }
+    else if (peaks != nullptr && peaks->size() > 0)
+        realWave (g, box.getCentreX(), box.getCentreY(), 140, 17.0f, *peaks);
     else
-    {
-        insetBox (g, box, 8);
         wave (g, box.getCentreX(), box.getCentreY(), 140, 17.0f, seed, 1.4f);
-    }
-
-    const char* names[] = { "Level", "Pitch", "Noise", "Hum", "Low cut", "Tail" };
-    for (int i = 0; i < 6; ++i)
-        knob (g, reg, cx + ((float) (i % 3) - 1.0f) * 52.0f, cy + 21.0f + (float) (i / 3) * 53.0f, 15.5f,
-              p[i], names[i], empty);
 }
 } // namespace
 
-NektarEditor::NektarEditor (NektarProcessor& p) : juce::AudioProcessorEditor (&p)
+namespace nektar
+{
+void drawKnob (Graphics& g, const juce::Typeface::Ptr& tf, float cx, float cy, float r, float p,
+               const juce::String& label, bool dim, float fs)
+{
+    const float a = dim ? 0.35f : 1.0f;
+    g.setColour (Colour (0xff1e1d1b));
+    g.fillEllipse (cx - r, cy - r, 2 * r, 2 * r);
+    {
+        juce::Graphics::ScopedSaveState s (g);
+        juce::Path c;
+        c.addEllipse (cx - r, cy - r, 2 * r, 2 * r);
+        g.reduceClipRegion (c);
+        g.setColour (kAcc.withMultipliedAlpha (a));
+        g.fillRect (cx - r, cy + r - 2 * r * p, 2 * r, 2 * r * p);
+    }
+    g.setColour (kAcc.withMultipliedAlpha (a));
+    g.drawEllipse (cx - r, cy - r, 2 * r, 2 * r, 1.5f);
+    g.setColour (kMuted.withMultipliedAlpha (dim ? 0.5f : 1.0f));
+    g.setFont (font (tf, fs));
+    g.drawText (label, juce::Rectangle<float> (cx - 45, cy + r + 3, 90, fs + 4), juce::Justification::centred);
+}
+} // namespace nektar
+
+// ------------------------------------------------------------------ KnobComponent
+KnobComponent::KnobComponent (juce::Typeface::Ptr tf, float r, juce::String label, bool dim, float fixedValue,
+                              juce::RangedAudioParameter* param, bool isToggle)
+    : typeface (std::move (tf)), radius (r), text (std::move (label)), dimmed (dim), fixed (fixedValue),
+      parameter (param), toggle (isToggle)
+{
+    if (parameter != nullptr)
+    {
+        attachment = std::make_unique<juce::ParameterAttachment> (*parameter, [this] (float) { repaint(); });
+        attachment->sendInitialUpdate();
+        setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+    }
+}
+
+void KnobComponent::paint (Graphics& g)
+{
+    const float s = (float) getWidth() / kWidth;
+    g.addTransform (juce::AffineTransform::scale (s));
+    const float p = parameter != nullptr ? parameter->getValue() : fixed;
+    nektar::drawKnob (g, typeface, kWidth / 2.0f, radius, radius, p, text, dimmed);
+}
+
+void KnobComponent::mouseDown (const juce::MouseEvent&)
+{
+    if (parameter == nullptr)
+        return;
+    parameter->beginChangeGesture();
+    if (toggle)
+        parameter->setValueNotifyingHost (parameter->getValue() > 0.5f ? 0.0f : 1.0f);
+    dragStart = parameter->getValue();
+}
+
+void KnobComponent::mouseDrag (const juce::MouseEvent& e)
+{
+    if (parameter == nullptr || toggle)
+        return;
+    const float s = (float) getWidth() / kWidth;
+    const float delta = -(float) e.getDistanceFromDragStartY() / (150.0f * s);
+    parameter->setValueNotifyingHost (juce::jlimit (0.0f, 1.0f, dragStart + delta));
+}
+
+void KnobComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (parameter != nullptr)
+        parameter->endChangeGesture();
+}
+
+void KnobComponent::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (parameter == nullptr || toggle)
+        return;
+    parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost (parameter->getDefaultValue());
+    parameter->endChangeGesture();
+}
+
+// ------------------------------------------------------------------ Editor
+namespace
+{
+const char* kKeys = "awsedftgyhujkolp;"; // computer keyboard = one chromatic octave and a bit, from C
+}
+
+NektarEditor::NektarEditor (NektarProcessor& p) : juce::AudioProcessorEditor (&p), proc (p)
 {
     regular = juce::Typeface::createSystemTypefaceFor (BinaryData::CarlitoRegular_ttf, BinaryData::CarlitoRegular_ttfSize);
     bold    = juce::Typeface::createSystemTypefaceFor (BinaryData::CarlitoBold_ttf, BinaryData::CarlitoBold_ttfSize);
+
+    // slots: 6 knobs each
+    const float slotX[] = { 205, 795, 205, 795 };
+    const float slotY[] = { 262, 262, 590, 590 };
+    const char* names[] = { "Level", "Pitch", "Noise", "Hum", "Low cut", "Tail" };
+    const float fixedVals[4][6] = { { 0.8f, 0.5f, 0.50f, 0.95f, 0.18f, 0.25f },
+                                    { 0.40f, 0.70f, 0.55f, 0.92f, 0.45f, 0.80f },
+                                    { 0.5f, 0.5f, 0.5f, 0.5f, 0.2f, 0.7f },
+                                    { 0.55f, 0.38f, 0.30f, 0.10f, 0.22f, 0.72f } };
+    for (int s = 0; s < 4; ++s)
+        for (int i = 0; i < 6; ++i)
+        {
+            const char* id = nullptr;
+            if (s == 0 && i == 0) id = "level";
+            if (s == 0 && i == 1) id = "pitch";
+            if (s == 0 && i == 5) id = "tail";
+            addKnob (slotX[s] + ((float) (i % 3) - 1.0f) * 52.0f, slotY[s] + 21.0f + (float) (i / 3) * 53.0f, 15.5f,
+                     names[i], s == 2, fixedVals[s][i], id);
+        }
+
+    // module panel: 4 modules x 3 knobs (only Loop is wired for now)
+    const char* modKnobs[4][3] = { { "Stretch", "Pitch", "Loop" }, { "Size", "Density", "Scatter" },
+                                   { "Morph", "Blur", "Freeze" }, { "Tune", "Decay", "Material" } };
+    const float modVals[4][3] = { { 0.45f, 0.72f, 0.0f }, { 0.55f, 0.68f, 0.30f },
+                                  { 0.50f, 0.78f, 0.04f }, { 0.62f, 0.85f, 0.42f } };
+    for (int m = 0; m < 4; ++m)
+        for (int k = 0; k < 3; ++k)
+            addKnob (130.0f + (float) m * 185.0f + 34.0f + (float) k * 58.0f, 772.0f + 100.0f, 22.0f,
+                     modKnobs[m][k], false, modVals[m][k], (m == 0 && k == 2) ? "loop" : nullptr, m == 0 && k == 2);
+
+    addKnob (740, 30, 13, "", false, 0.6f); // Out (not wired yet)
 
     constrainer.setFixedAspectRatio (1.0);
     constrainer.setMinimumSize (500, 500);
     constrainer.setMaximumSize (2400, 2400);
     setConstrainer (&constrainer);
     setResizable (true, true);
+    setWantsKeyboardFocus (true);
+    proc.addChangeListener (this);
     setSize (860, 860);
+    grabKeyboardFocus();
 }
 
-void NektarEditor::resized() {}
+NektarEditor::~NektarEditor()
+{
+    proc.removeChangeListener (this);
+    releaseAllKeys();
+}
+
+void NektarEditor::addKnob (float cx, float cy, float r, const juce::String& label, bool dim, float fixed,
+                            const char* paramId, bool toggle)
+{
+    juce::RangedAudioParameter* param = paramId != nullptr ? proc.apvts.getParameter (paramId) : nullptr;
+    auto* k = knobs.add (new KnobComponent (regular, r, label, dim, fixed, param, toggle));
+    knobPos.add ({ cx, cy });
+    addAndMakeVisible (k);
+}
+
+void NektarEditor::resized()
+{
+    const float s = (float) getWidth() / 1000.0f;
+    for (int i = 0; i < knobs.size(); ++i)
+    {
+        auto* k = knobs[i];
+        const auto c = knobPos[i];
+        const float r = (k->height() - 20.0f) / 2.0f;
+        k->setBounds (juce::Rectangle<float> ((c.x - KnobComponent::kWidth / 2.0f) * s, (c.y - r) * s,
+                                              KnobComponent::kWidth * s, k->height() * s).toNearestInt());
+    }
+}
+
+void NektarEditor::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    cache = juce::Image();
+    repaint();
+}
 
 void NektarEditor::paint (Graphics& g)
 {
@@ -178,6 +314,99 @@ void NektarEditor::addGrain (juce::Image& img)
                                              (juce::uint8) juce::jlimit (0, 255, (int) c.getGreen() + n),
                                              (juce::uint8) juce::jlimit (0, 255, (int) c.getBlue() + n)));
         }
+}
+
+// ---- loading sounds
+void NektarEditor::mouseDown (const juce::MouseEvent& e)
+{
+    grabKeyboardFocus();
+    const auto p = e.position / ((float) getWidth() / 1000.0f);
+    if (juce::Rectangle<float> (125, 194, 160, 46).contains (p))
+        chooseFile();
+}
+
+void NektarEditor::chooseFile()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Choose a sound for slot 1", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+    juce::Component::SafePointer<NektarEditor> safe (this);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe] (const juce::FileChooser& fc)
+                          {
+                              const auto f = fc.getResult();
+                              if (safe != nullptr && f.existsAsFile())
+                                  safe->loadFile (f);
+                          });
+}
+
+void NektarEditor::loadFile (const juce::File& f)
+{
+    message = proc.loadSample (f);
+    cache = juce::Image();
+    repaint();
+}
+
+bool NektarEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (auto& f : files)
+        if (juce::File (f).hasFileExtension ("wav;aif;aiff;flac"))
+            return true;
+    return false;
+}
+
+void NektarEditor::filesDropped (const juce::StringArray& files, int, int)
+{
+    for (auto& f : files)
+        if (juce::File (f).hasFileExtension ("wav;aif;aiff;flac"))
+        {
+            loadFile (juce::File (f));
+            return;
+        }
+}
+
+// ---- computer keyboard as a piano (A W S E D F T G Y H U J K O L P ;), Z/X = octave down/up
+void NektarEditor::releaseAllKeys()
+{
+    for (int n : heldNotes)
+        proc.keyboardState.noteOff (1, n, 0.0f);
+    heldNotes.clear();
+}
+
+bool NektarEditor::keyPressed (const juce::KeyPress& k)
+{
+    const auto c = (juce::juce_wchar) juce::CharacterFunctions::toLowerCase (k.getTextCharacter());
+    if (k.getModifiers().isCommandDown() || k.getModifiers().isCtrlDown())
+        return false;
+    if (c == 'z' || c == 'x')
+    {
+        releaseAllKeys();
+        octaveShift = juce::jlimit (-3, 3, octaveShift + (c == 'x' ? 1 : -1));
+        return true;
+    }
+    return juce::String (kKeys).containsChar (c);
+}
+
+bool NektarEditor::keyStateChanged (bool)
+{
+    bool changed = false;
+    for (int i = 0; kKeys[i] != 0; ++i)
+    {
+        const int note = juce::jlimit (0, 127, 60 + 12 * octaveShift + i);
+        const bool down = juce::KeyPress::isKeyCurrentlyDown ((int) kKeys[i]);
+        const bool held = heldNotes.count (note) > 0;
+        if (down && ! held)
+        {
+            heldNotes.insert (note);
+            proc.keyboardState.noteOn (1, note, 0.8f);
+            changed = true;
+        }
+        else if (! down && held)
+        {
+            heldNotes.erase (note);
+            proc.keyboardState.noteOff (1, note, 0.0f);
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 void NektarEditor::renderDesign (Graphics& g)
@@ -240,7 +469,6 @@ void NektarEditor::renderDesign (Graphics& g)
     g.setFont (font (bld, 15));
     g.drawText ("Save to library", juce::Rectangle<float> (570, 11, 142, 38), juce::Justification::centred);
 
-    knob (g, reg, 740, 30, 13, 0.6f, "");
     g.setColour (kMuted);
     g.setFont (font (reg, 13));
     g.drawText ("Out  -6.0 dB", juce::Rectangle<float> (760, 18, 90, 24), juce::Justification::centredLeft);
@@ -310,7 +538,7 @@ void NektarEditor::renderDesign (Graphics& g)
 
     g.setColour (kMuted);
     g.setFont (font (reg, 13));
-    g.drawText (juce::String (juce::CharPointer_UTF8 ("Check \xc2\xb7 slot 1")), juce::Rectangle<float> (kCx - 80, kCy - 88, 160, 18), juce::Justification::centred);
+    g.drawText (message.isNotEmpty() ? message : juce::String (juce::CharPointer_UTF8 ("Check \xc2\xb7 slot 1")), juce::Rectangle<float> (kCx - 80, kCy - 88, 160, 18), juce::Justification::centred);
     wave (g, kCx, kCy - 52, 114, 10.0f, 11, 1.2f, 34);
     const char* rows[] = { "Noise floor", "Hum 50 Hz", "Clipping" };
     const char* vals[] = { "-58 dB", "+3 harm.", "none" };
@@ -328,15 +556,34 @@ void NektarEditor::renderDesign (Graphics& g)
         g.drawText (vals[i], juce::Rectangle<float> (kCx + 10, y - 9, 70, 18), juce::Justification::centredRight);
     }
 
-    // ---- four slots
-    const float p1[] = { 0.82f, 0.62f, 0.50f, 0.95f, 0.18f, 0.88f };
-    const float p2[] = { 0.40f, 0.70f, 0.55f, 0.92f, 0.45f, 0.80f };
-    const float p4[] = { 0.55f, 0.38f, 0.30f, 0.10f, 0.22f, 0.72f };
+    // ---- four slots (slot 1 is real: the loaded sound; slots 2-4 are placeholders for now)
     const float p3[] = { 0.5f, 0.5f, 0.5f, 0.5f, 0.2f, 0.7f };
-    slotDisc (g, reg, bld, 205, 262, 1, "Glass tap", false, p1, 3);
-    slotDisc (g, reg, bld, 795, 262, 2, "Paper rub", false, p2, 5);
-    slotDisc (g, reg, bld, 205, 590, 3, "Empty", true, p3, 0);
-    slotDisc (g, reg, bld, 795, 590, 4, "Bowl hum", false, p4, 9);
+    {
+        const auto s = proc.getSample();
+        juce::Array<float> peaks;
+        if (s != nullptr)
+        {
+            const int n = s->data.getNumSamples();
+            const int bars = 40;
+            float mx = 1.0e-6f;
+            for (int b = 0; b < bars; ++b)
+            {
+                const int a = (int) ((juce::int64) n * b / bars), e = juce::jmax (a + 1, (int) ((juce::int64) n * (b + 1) / bars));
+                float m = 0.0f;
+                for (int c = 0; c < s->data.getNumChannels(); ++c)
+                    m = juce::jmax (m, s->data.findMinMax (c, a, e - a).getLength() * 0.5f);
+                peaks.add (m);
+                mx = juce::jmax (mx, m);
+            }
+            for (auto& v : peaks) v /= mx;
+        }
+        slotDisc (g, reg, bld, 205, 262, 1, s != nullptr ? s->name : juce::String ("Empty"),
+                  s == nullptr, "load WAV", &peaks, 0);
+    }
+    slotDisc (g, reg, bld, 795, 262, 2, "Paper rub", false, "", nullptr, 5);
+    slotDisc (g, reg, bld, 205, 590, 3, "Empty", true, "from map", nullptr, 0);
+    slotDisc (g, reg, bld, 795, 590, 4, "Bowl hum", false, "", nullptr, 9);
+    (void) p3;
 
     // ---- module panel
     const float PX = 130, PY = 772, PW = 740, PH = 192;
@@ -368,7 +615,5 @@ void NektarEditor::renderDesign (Graphics& g)
         g.setColour (kMuted);
         g.setFont (font (reg, 12));
         g.drawText (mods[m].value, juce::Rectangle<float> (mx + 70, PY + 12, PW / 4.0f - 88, 28), juce::Justification::centredRight);
-        for (int k = 0; k < 3; ++k)
-            knob (g, reg, mx + 34 + (float) k * 58.0f, PY + 100, 22, mods[m].p[k], mods[m].k[k]);
     }
 }

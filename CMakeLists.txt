@@ -32,7 +32,8 @@ juce_add_plugin(Nektar
 
 target_sources(Nektar PRIVATE
   Source/PluginProcessor.cpp
-  Source/PluginEditor.cpp)
+  Source/PluginEditor.cpp
+  Source/SamplePlayer.cpp)
 
 target_compile_definitions(Nektar PUBLIC
   JUCE_WEB_BROWSER=0
